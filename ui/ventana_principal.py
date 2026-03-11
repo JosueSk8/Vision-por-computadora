@@ -1,55 +1,20 @@
 import cv2
 from PyQt5.QtWidgets import (QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout,
                              QGridLayout, QWidget, QFileDialog, QMessageBox,
-                             QFrame, QMdiArea, QMdiSubWindow, QTabWidget, QSlider, QLabel,
-                             QDialog, QColorDialog)
-from PyQt5.QtGui import QImage, QPixmap, QColor
+                             QFrame, QMdiArea, QMdiSubWindow, QTabWidget, QSlider, QLabel)
+from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import Qt
 
 from core.procesamiento import cargar_imagen
 from core.filtros import (filtro_grises, aplicar_mapa_cv2, mapa_pastel,
                           mapa_tierra, mapa_neon_termico, extraer_rostro,
                           canal_rojo, canal_verde, canal_azul, binarizar_imagen,
-                          modelo_hsv, modelo_cmy, modelo_yiq, modelo_hsi,  # <-- Agregamos los nuevos modelos aquí
-                          generar_histograma, aplicar_mapa_personalizado, calcular_estadisticas)
+                          aplicar_mapa_personalizado)
+from core.modelos_color import (modelo_hsv, modelo_cmy, modelo_yiq, modelo_hsi)
+
+from core.estadisticas import generar_histograma, calcular_estadisticas
 from ui.visor_imagen import VisorImagen
-
-
-class DialogoMapaPersonalizado(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Diseñador de Mapa de Color")
-        self.setFixedSize(300, 350)
-        self.setStyleSheet("background-color: #333; color: white;")
-        self.colores = [QColor(255, 0, 0), QColor(255, 255, 0), QColor(0, 255, 0),
-                        QColor(0, 255, 255), QColor(0, 0, 255)]
-        layout = QVBoxLayout(self)
-        label_instruccion = QLabel("Selecciona 5 colores para tu mapa:")
-        label_instruccion.setAlignment(Qt.AlignCenter)
-        layout.addWidget(label_instruccion)
-        self.botones_color = []
-        for i in range(5):
-            btn = QPushButton(f"Elegir Nivel de Color {i + 1}")
-            btn.setStyleSheet(
-                f"background-color: {self.colores[i].name()}; color: black; font-weight: bold; padding: 10px; border-radius: 5px;")
-            btn.clicked.connect(lambda checked, idx=i: self.elegir_color(idx))
-            self.botones_color.append(btn)
-            layout.addWidget(btn)
-        self.btn_aplicar = QPushButton("🚀 Aplicar a la Imagen")
-        self.btn_aplicar.setStyleSheet(
-            "background-color: #2e7d32; font-weight: bold; padding: 12px; border-radius: 5px; margin-top: 15px;")
-        self.btn_aplicar.clicked.connect(self.accept)
-        layout.addWidget(self.btn_aplicar)
-
-    def elegir_color(self, idx):
-        color = QColorDialog.getColor(self.colores[idx], self, f"Seleccionar Color {idx + 1}")
-        if color.isValid():
-            self.colores[idx] = color
-            self.botones_color[idx].setStyleSheet(
-                f"background-color: {color.name()}; color: black; font-weight: bold; padding: 10px; border-radius: 5px;")
-
-    def obtener_colores_normalizados(self):
-        return [(c.red() / 255.0, c.green() / 255.0, c.blue() / 255.0) for c in self.colores]
+from ui.dialogo_personalizado import DialogoMapaPersonalizado
 
 
 class VentanaPrincipal(QMainWindow):
@@ -62,6 +27,7 @@ class VentanaPrincipal(QMainWindow):
         layout_principal = QHBoxLayout()
         layout_principal.setContentsMargins(15, 15, 15, 15)
 
+        # PANEL IZQUIERDO
         marco_controles_v = QVBoxLayout()
         marco_botones = QFrame()
         marco_botones.setFixedWidth(390)
