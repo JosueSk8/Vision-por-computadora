@@ -1,7 +1,8 @@
 import cv2
 from PyQt5.QtWidgets import (QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout,
                              QGridLayout, QWidget, QFileDialog, QMessageBox,
-                             QFrame, QMdiArea, QMdiSubWindow, QTabWidget, QSlider, QLabel)
+                             QFrame, QMdiArea, QMdiSubWindow, QTabWidget, QSlider, QLabel,
+                             QToolBox)  # <-- NUEVA IMPORTACIÓN
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import Qt
 
@@ -11,8 +12,14 @@ from core.filtros import (filtro_grises, aplicar_mapa_cv2, mapa_pastel,
                           canal_rojo, canal_verde, canal_azul, binarizar_imagen,
                           aplicar_mapa_personalizado)
 from core.modelos_color import (modelo_hsv, modelo_cmy, modelo_yiq, modelo_hsi)
-
 from core.estadisticas import generar_histograma, calcular_estadisticas
+
+from core.ruidos import agregar_ruido_sal_pimienta, agregar_ruido_gaussiano
+from core.operaciones import (suavizar_ruido, operacion_not, operacion_and,
+                              operacion_or, operacion_xor, contar_objetos,
+                              operacion_suma, operacion_resta, operacion_multiplicacion,
+                              operacion_mayor, operacion_menor, operacion_igual)
+
 from ui.visor_imagen import VisorImagen
 from ui.dialogo_personalizado import DialogoMapaPersonalizado
 
@@ -20,7 +27,7 @@ from ui.dialogo_personalizado import DialogoMapaPersonalizado
 class VentanaPrincipal(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Procesador de Imágenes Estadístico - Prácticas 1 y 2")
+        self.setWindowTitle("Procesador de Imágenes - Prácticas 1, 2 y 3")
         self.setGeometry(50, 50, 1200, 850)
         self.setStyleSheet("background-color: #262626; color: white;")
 
@@ -30,7 +37,7 @@ class VentanaPrincipal(QMainWindow):
         # PANEL IZQUIERDO
         marco_controles_v = QVBoxLayout()
         marco_botones = QFrame()
-        marco_botones.setFixedWidth(390)
+        marco_botones.setFixedWidth(430)
         marco_botones.setStyleSheet(
             "QFrame { background-color: #3a3a3a; border: 2px solid #555555; border-radius: 10px; }")
         layout_marco = QVBoxLayout()
@@ -54,7 +61,7 @@ class VentanaPrincipal(QMainWindow):
             QTabBar::tab:selected { background: #2a5a8a; font-weight: bold; }
         """)
 
-        # PESTAÑA 1: Básicos y Modelos de Color
+        # --- PESTAÑA 1: Básicos ---
         tab_basicos = QWidget()
         layout_basicos = QVBoxLayout(tab_basicos)
         grid_basicos = QGridLayout()
@@ -75,7 +82,7 @@ class VentanaPrincipal(QMainWindow):
         marco_slider.setStyleSheet(
             "background-color: #333; border: 1px solid #555; border-radius: 5px; margin-top: 10px;")
         layout_slider = QVBoxLayout(marco_slider)
-        self.label_umbral = QLabel("Umbral de Binarización: 128")
+        self.label_umbral = QLabel("Umbral General (Bin/Relacional): 128")
         self.label_umbral.setAlignment(Qt.AlignCenter)
         self.slider_umbral = QSlider(Qt.Horizontal)
         self.slider_umbral.setRange(0, 255)
@@ -90,9 +97,9 @@ class VentanaPrincipal(QMainWindow):
 
         layout_basicos.addWidget(marco_slider)
         layout_basicos.addStretch()
-        self.tabs.addTab(tab_basicos, "Modelos y Canales")
+        self.tabs.addTab(tab_basicos, "Modelos")
 
-        # PESTAÑA 2: Pseudocolor e IA
+        # --- PESTAÑA 2: Pseudocolor e IA ---
         tab_color = QWidget()
         layout_color = QVBoxLayout(tab_color)
         grid_color = QGridLayout()
@@ -107,7 +114,7 @@ class VentanaPrincipal(QMainWindow):
 
         layout_color.addLayout(grid_color)
 
-        self.btn_crear_mapa = QPushButton("🎨 Crear Paleta de Color Propia")
+        self.btn_crear_mapa = QPushButton("🎨 Crear Paleta Propia")
         self.btn_crear_mapa.setStyleSheet(
             "background-color: #d84315; font-weight: bold; padding: 12px; border-radius: 5px; margin-top: 5px;")
         self.btn_crear_mapa.clicked.connect(self.abrir_dialogo_personalizado)
@@ -121,7 +128,64 @@ class VentanaPrincipal(QMainWindow):
         layout_color.addWidget(self.btn_recorte)
         layout_color.addStretch()
 
-        self.tabs.addTab(tab_color, "Pseudocolor e IA")
+        self.tabs.addTab(tab_color, "Filtros e IA")
+
+        # --- PESTAÑA 3: MINIPROYECTO (ACORDEÓN / QTOOLBOX) ---
+        tab_p3 = QWidget()
+        layout_p3 = QVBoxLayout(tab_p3)
+
+        # Creamos el Acordeón
+        self.acordeon_p3 = QToolBox()
+        self.acordeon_p3.setStyleSheet("""
+            QToolBox::tab { background-color: #4a4a4a; color: white; font-weight: bold; border-radius: 4px; padding: 5px; }
+            QToolBox::tab:selected { background-color: #2a5a8a; font-style: italic; }
+        """)
+
+        # CAJA 1: Ruido
+        widget_ruido = QWidget()
+        grid_ruido = QGridLayout(widget_ruido)
+        self.crear_boton("Polvo: Sal/Pimienta", grid_ruido, 0, 0, lambda: self.aplicar_filtro("Ruido SP"))
+        self.crear_boton("Estática: Gaussiano", grid_ruido, 0, 1, lambda: self.aplicar_filtro("Ruido Gaussiano"))
+        self.crear_boton("Suavizador (Gauss)", grid_ruido, 1, 0, lambda: self.aplicar_filtro("Filtro Suavizador"))
+        self.acordeon_p3.addItem(widget_ruido, "▶ 1. Ruido y Filtros (3-a)")
+
+        # CAJA 2: Aritméticas
+        widget_arit = QWidget()
+        grid_arit = QGridLayout(widget_arit)
+        self.crear_boton("Suma (+ Brillo)", grid_arit, 0, 0, lambda: self.aplicar_filtro("Op Suma"))
+        self.crear_boton("Resta (- Brillo)", grid_arit, 0, 1, lambda: self.aplicar_filtro("Op Resta"))
+        self.crear_boton("Multiplicar (Contraste)", grid_arit, 1, 0, lambda: self.aplicar_filtro("Op Mult"))
+        self.acordeon_p3.addItem(widget_arit, "▶ 2. Operaciones Aritméticas (3-b)")
+
+        # CAJA 3: Relacionales
+        widget_relac = QWidget()
+        grid_relac = QGridLayout(widget_relac)
+        self.crear_boton("Mayor que (>)", grid_relac, 0, 0, lambda: self.aplicar_filtro("Op Mayor"))
+        self.crear_boton("Menor que (<)", grid_relac, 0, 1, lambda: self.aplicar_filtro("Op Menor"))
+        self.crear_boton("Igual a (==)", grid_relac, 1, 0, lambda: self.aplicar_filtro("Op Igual"))
+        self.acordeon_p3.addItem(widget_relac, "▶ 3. Op. Relacionales (Usan Slider) (3-b)")
+
+        # CAJA 4: Lógicas
+        widget_logic = QWidget()
+        grid_logic = QGridLayout(widget_logic)
+        self.crear_boton("Op. AND", grid_logic, 0, 0, lambda: self.aplicar_filtro("Operación AND"))
+        self.crear_boton("Op. OR", grid_logic, 0, 1, lambda: self.aplicar_filtro("Operación OR"))
+        self.crear_boton("Op. XOR", grid_logic, 1, 0, lambda: self.aplicar_filtro("Operación XOR"))
+        self.crear_boton("Invertir (NOT)", grid_logic, 1, 1, lambda: self.aplicar_filtro("Operación NOT"))
+        self.acordeon_p3.addItem(widget_logic, "▶ 4. Compuertas Lógicas (Piden 2da foto)")
+
+        # CAJA 5: Conteo
+        widget_conteo = QWidget()
+        grid_conteo = QGridLayout(widget_conteo)
+        self.crear_boton("Contar (Vecindad-4)", grid_conteo, 0, 0, lambda: self.aplicar_filtro("Contar V-4"))
+        self.crear_boton("Contar (Vecindad-8)", grid_conteo, 0, 1, lambda: self.aplicar_filtro("Contar V-8"))
+        self.acordeon_p3.addItem(widget_conteo, "▶ 5. Conteo de Objetos (3-c)")
+
+        # Agregamos el acordeón a la pestaña
+        layout_p3.addWidget(self.acordeon_p3)
+
+        self.tabs.addTab(tab_p3, "Práctica 3")
+
         layout_marco.addWidget(self.tabs)
         layout_marco.addStretch()
 
@@ -135,7 +199,7 @@ class VentanaPrincipal(QMainWindow):
 
         # HISTOGRAMA Y ESTADÍSTICAS
         self.marco_hist = QFrame()
-        self.marco_hist.setFixedWidth(390)
+        self.marco_hist.setFixedWidth(430)
         self.marco_hist.setFixedHeight(340)
         self.marco_hist.setStyleSheet(
             "QFrame { background-color: #1e1e1e; border: 2px solid #555555; border-radius: 10px; margin-top: 10px; }")
@@ -254,12 +318,12 @@ class VentanaPrincipal(QMainWindow):
         self.actualizar_histograma_fijo(visor)
 
     def cambiar_umbral(self, valor):
-        self.label_umbral.setText(f"Umbral de Binarización: {valor}")
+        self.label_umbral.setText(f"Umbral General (Bin/Relacional): {valor}")
         ventana_activa = self.mdi_area.activeSubWindow()
         if ventana_activa:
             visor = ventana_activa.widget()
-            visor.filtro_actual = "Binarizar"
-            self.procesar_visor(visor, ventana_activa)
+            if visor.filtro_actual in ["Binarizar", "Op Mayor", "Op Menor", "Op Igual", "Contar V-4", "Contar V-8"]:
+                self.procesar_visor(visor, ventana_activa)
 
     def abrir_dialogo_personalizado(self):
         ventana_activa = self.mdi_area.activeSubWindow()
@@ -282,6 +346,14 @@ class VentanaPrincipal(QMainWindow):
             return
 
         visor = ventana_activa.widget()
+
+        if tipo_filtro in ["Operación AND", "Operación OR", "Operación XOR"]:
+            ruta_img2, _ = QFileDialog.getOpenFileName(self, f"Selecciona la 2DA IMAGEN para la {tipo_filtro}", "",
+                                                       "Imágenes (*.png *.jpg *.jpeg)")
+            if not ruta_img2:
+                return
+            visor.img2_cache = cargar_imagen(ruta_img2)
+
         visor.filtro_actual = tipo_filtro
         self.procesar_visor(visor, ventana_activa)
 
@@ -304,6 +376,8 @@ class VentanaPrincipal(QMainWindow):
             resultado = matriz_base
         elif tipo_filtro == "Grises":
             resultado = filtro_grises(matriz_base)
+        elif tipo_filtro == "Binarizar":
+            resultado = binarizar_imagen(matriz_base, self.slider_umbral.value())
         elif tipo_filtro == "Modelo CMY":
             resultado = modelo_cmy(matriz_base)
         elif tipo_filtro == "Modelo YIQ":
@@ -318,8 +392,6 @@ class VentanaPrincipal(QMainWindow):
             resultado = canal_verde(matriz_base)
         elif tipo_filtro == "Canal Azul":
             resultado = canal_azul(matriz_base)
-        elif tipo_filtro == "Binarizar":
-            resultado = binarizar_imagen(matriz_base, self.slider_umbral.value())
         elif tipo_filtro == "Mapa JET":
             resultado = aplicar_mapa_cv2(matriz_base, cv2.COLORMAP_JET)
         elif tipo_filtro == "Mapa HOT":
@@ -334,6 +406,58 @@ class VentanaPrincipal(QMainWindow):
             resultado = mapa_neon_termico(matriz_base)
         elif tipo_filtro == "Mapa Creado":
             resultado = aplicar_mapa_personalizado(matriz_base, visor.colores_custom)
+
+        # --- PRÁCTICA 3 ---
+        elif tipo_filtro == "Ruido SP":
+            gris = cv2.cvtColor(matriz_base, cv2.COLOR_RGB2GRAY)
+            ruido = agregar_ruido_sal_pimienta(gris, cantidad=0.05)
+            resultado = cv2.cvtColor(ruido, cv2.COLOR_GRAY2RGB)
+
+        elif tipo_filtro == "Ruido Gaussiano":
+            gris = cv2.cvtColor(matriz_base, cv2.COLOR_RGB2GRAY)
+            ruido = agregar_ruido_gaussiano(gris, media=0, sigma=30)
+            resultado = cv2.cvtColor(ruido, cv2.COLOR_GRAY2RGB)
+
+        elif tipo_filtro == "Filtro Suavizador":
+            resultado = suavizar_ruido(matriz_base)
+
+        elif tipo_filtro == "Op Suma":
+            resultado = operacion_suma(matriz_base, 50)
+
+        elif tipo_filtro == "Op Resta":
+            resultado = operacion_resta(matriz_base, 50)
+
+        elif tipo_filtro == "Op Mult":
+            resultado = operacion_multiplicacion(matriz_base, 1.5)
+
+        elif tipo_filtro == "Op Mayor":
+            resultado = operacion_mayor(matriz_base, self.slider_umbral.value())
+
+        elif tipo_filtro == "Op Menor":
+            resultado = operacion_menor(matriz_base, self.slider_umbral.value())
+
+        elif tipo_filtro == "Op Igual":
+            resultado = operacion_igual(matriz_base, self.slider_umbral.value())
+
+        elif tipo_filtro == "Operación NOT":
+            resultado = operacion_not(matriz_base)
+
+        elif tipo_filtro == "Operación AND":
+            resultado = operacion_and(matriz_base, visor.img2_cache)
+
+        elif tipo_filtro == "Operación OR":
+            resultado = operacion_or(matriz_base, visor.img2_cache)
+
+        elif tipo_filtro == "Operación XOR":
+            resultado = operacion_xor(matriz_base, visor.img2_cache)
+
+        elif tipo_filtro == "Contar V-4":
+            resultado, conteo = contar_objetos(matriz_base, vecindad=4, valor_umbral=self.slider_umbral.value())
+            QMessageBox.information(self, "Resultado", f"¡Se detectaron {conteo} objetos usando Vecindad-4!")
+
+        elif tipo_filtro == "Contar V-8":
+            resultado, conteo = contar_objetos(matriz_base, vecindad=8, valor_umbral=self.slider_umbral.value())
+            QMessageBox.information(self, "Resultado", f"¡Se detectaron {conteo} objetos usando Vecindad-8!")
 
         visor.dibujar_imagen(resultado)
         ventana_activa.setWindowTitle(f"Filtro: {tipo_filtro}")
