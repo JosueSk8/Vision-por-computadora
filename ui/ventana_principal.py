@@ -1,9 +1,9 @@
 import cv2
-import numpy as np  # <-- AÑADIDO: Necesario para los ruidos
+import numpy as np
 from PyQt5.QtWidgets import (QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout,
                              QGridLayout, QWidget, QFileDialog, QMessageBox,
                              QFrame, QMdiArea, QMdiSubWindow, QTabWidget, QSlider, QLabel,
-                             QToolBox, QComboBox, QSpinBox)  # <-- AÑADIDO: QComboBox y QSpinBox
+                             QToolBox, QComboBox, QSpinBox, QDoubleSpinBox)  # <-- AÑADIDO: QDoubleSpinBox
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import Qt
 
@@ -22,16 +22,19 @@ from core.operaciones import (suavizar_ruido, operacion_not, operacion_and,
                               operacion_mayor, operacion_menor, operacion_igual,
                               obtener_codigo_cadena)
 
+from core.morfologia import aplicar_morfologia
+
+# --- AÑADIDO: Importamos las funciones matemáticas de tu nuevo archivo ---
+from core.frecuencia import aplicar_filtro_fft, aplicar_compresion_dct
+
 from ui.visor_imagen import VisorImagen
 from ui.dialogo_personalizado import DialogoMapaPersonalizado
-
-from core.morfologia import aplicar_morfologia
 
 
 class VentanaPrincipal(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Procesador de Imágenes - Prácticas 1, 2, 3 y 4")
+        self.setWindowTitle("Procesador de Imágenes - Prácticas 1 a 5")
         self.setGeometry(50, 50, 1200, 850)
         self.setStyleSheet("background-color: #262626; color: white;")
 
@@ -187,7 +190,6 @@ class VentanaPrincipal(QMainWindow):
         tab_p4 = QWidget()
         layout_p4 = QVBoxLayout(tab_p4)
 
-        # 1. Controles de Ruido
         layout_p4.addWidget(QLabel("1. Inyectar Ruido Manualmente:"))
         self.combo_ruido_p4 = QComboBox()
         self.combo_ruido_p4.setStyleSheet("background-color: #444; padding: 5px;")
@@ -199,13 +201,11 @@ class VentanaPrincipal(QMainWindow):
         self.btn_ruido_p4.clicked.connect(self.procesar_ruido_p4)
         layout_p4.addWidget(self.btn_ruido_p4)
 
-        # Separador
         linea = QFrame()
         linea.setFrameShape(QFrame.HLine)
         linea.setFrameShadow(QFrame.Sunken)
         layout_p4.addWidget(linea)
 
-        # 2. Controles de Morfología
         layout_p4.addWidget(QLabel("2. Operación Morfológica:"))
         self.combo_operacion_p4 = QComboBox()
         self.combo_operacion_p4.setStyleSheet("background-color: #444; padding: 5px;")
@@ -239,7 +239,72 @@ class VentanaPrincipal(QMainWindow):
 
         layout_p4.addStretch()
         self.tabs.addTab(tab_p4, "Práctica 4")
-        # ----------------------------------------
+
+        # --- AÑADIDO: PESTAÑA 5 (FRECUENCIA Y COMPRESIÓN) ---
+        tab_p5 = QWidget()
+        layout_p5 = QVBoxLayout(tab_p5)
+
+        self.acordeon_p5 = QToolBox()
+        self.acordeon_p5.setStyleSheet(self.acordeon_p3.styleSheet())
+
+        widget_fft = QWidget()
+        layout_fft = QVBoxLayout(widget_fft)
+
+        layout_fft.addWidget(QLabel("Tipo de Filtro:"))
+        self.combo_filtro_fft = QComboBox()
+        self.combo_filtro_fft.setStyleSheet("background-color: #444; padding: 5px;")
+        self.combo_filtro_fft.addItems(["Ideal", "Gaussiano", "Butterworth"])
+        layout_fft.addWidget(self.combo_filtro_fft)
+
+        layout_fft.addWidget(QLabel("Modo de Paso:"))
+        self.combo_pasa_fft = QComboBox()
+        self.combo_pasa_fft.setStyleSheet("background-color: #444; padding: 5px;")
+        self.combo_pasa_fft.addItems(["Pasa-bajas (Suavizar)", "Pasa-altas (Bordes)"])
+        layout_fft.addWidget(self.combo_pasa_fft)
+
+        layout_fft.addWidget(QLabel("Radio de Corte (Cutoff):"))
+        self.spin_cutoff = QDoubleSpinBox()
+        self.spin_cutoff.setStyleSheet("background-color: #444; padding: 5px;")
+        self.spin_cutoff.setRange(0.01, 1.0)
+        self.spin_cutoff.setSingleStep(0.05)
+        self.spin_cutoff.setValue(0.15)
+        layout_fft.addWidget(self.spin_cutoff)
+
+        layout_fft.addWidget(QLabel("Orden (Solo para Butterworth):"))
+        self.spin_orden = QSpinBox()
+        self.spin_orden.setStyleSheet("background-color: #444; padding: 5px;")
+        self.spin_orden.setRange(1, 10)
+        self.spin_orden.setValue(2)
+        layout_fft.addWidget(self.spin_orden)
+
+        self.btn_fft = QPushButton("Aplicar Filtro FFT")
+        self.btn_fft.setStyleSheet(self.estilo_btn)
+        self.btn_fft.clicked.connect(self.procesar_fft)
+        layout_fft.addWidget(self.btn_fft)
+
+        self.acordeon_p5.addItem(widget_fft, "▶ Parte A: Filtros Fourier (FFT)")
+
+        widget_dct = QWidget()
+        layout_dct = QVBoxLayout(widget_dct)
+
+        layout_dct.addWidget(QLabel("Factor de Calidad (q_factor):"))
+        self.spin_qfactor = QDoubleSpinBox()
+        self.spin_qfactor.setStyleSheet("background-color: #444; padding: 5px;")
+        self.spin_qfactor.setRange(0.1, 2.0)
+        self.spin_qfactor.setSingleStep(0.1)
+        self.spin_qfactor.setValue(1.0)
+        layout_dct.addWidget(self.spin_qfactor)
+
+        self.btn_dct = QPushButton("Comprimir Imagen (DCT)")
+        self.btn_dct.setStyleSheet(self.estilo_btn)
+        self.btn_dct.clicked.connect(self.procesar_dct)
+        layout_dct.addWidget(self.btn_dct)
+
+        self.acordeon_p5.addItem(widget_dct, "▶ Parte B: Compresión DCT")
+
+        layout_p5.addWidget(self.acordeon_p5)
+        self.tabs.addTab(tab_p5, "Práctica 5")
+        # -----------------------------------------------------------
 
         layout_marco.addWidget(self.tabs)
         layout_marco.addStretch()
@@ -533,15 +598,13 @@ class VentanaPrincipal(QMainWindow):
         ruta_guardado, _ = QFileDialog.getSaveFileName(self, "Guardar Imagen", "", "PNG (*.png);;JPEG (*.jpg *.jpeg)")
 
         if ruta_guardado:
-            # Asegúrate de que visor.imagen_actual exista en tu clase VisorImagen
             imagen_bgr = cv2.cvtColor(getattr(visor, 'imagen_actual', visor.imagen_original), cv2.COLOR_RGB2BGR)
             cv2.imwrite(ruta_guardado, imagen_bgr)
             QMessageBox.information(self, "Éxito", "Imagen guardada correctamente.")
 
     # ==============================================================
-    # MÉTODOS NUEVOS PARA LA PRÁCTICA 4
+    # MÉTODOS DE LA PRÁCTICA 4
     # ==============================================================
-
     def procesar_ruido_p4(self):
         ventana_activa = self.mdi_area.activeSubWindow()
         if not ventana_activa:
@@ -549,7 +612,6 @@ class VentanaPrincipal(QMainWindow):
             return
 
         visor = ventana_activa.widget()
-        # Tomamos la imagen que actualmente se ve en la pantalla del visor
         matriz_base = getattr(visor, 'imagen_actual', visor.imagen_original)
         tipo_ruido = self.combo_ruido_p4.currentText()
 
@@ -571,58 +633,46 @@ class VentanaPrincipal(QMainWindow):
                     img_ruido[ruido_mat < 10] = 255
                     img_ruido[ruido_mat > 245] = 0
 
-            # --- 1. PARCHE ANTI-CRASHEO PARA PYQT5 ---
-            # Si la imagen viene de una morfología (2D), la engañamos pasándola a 3 canales
             if len(img_ruido.shape) == 2:
                 img_mostrar = cv2.cvtColor(img_ruido, cv2.COLOR_GRAY2RGB)
             else:
                 img_mostrar = img_ruido
 
             visor.dibujar_imagen(img_mostrar)
-
-            # --- 2. PARCHE PARA ENCADENAMIENTO ---
-            # Guardamos la imagen en memoria para que la morfología la pueda leer con ruido
             visor.imagen_actual = img_ruido
-
             ventana_activa.setWindowTitle(f"Ruido: {tipo_ruido}")
 
         except Exception as e:
             QMessageBox.critical(self, "Error inyectando ruido", f"Ocurrió un error:\n\n{str(e)}")
 
     def procesar_morfologia_p4(self):
-        # 1. Verificamos que haya una ventana abierta
         ventana_activa = self.mdi_area.activeSubWindow()
         if not ventana_activa:
             QMessageBox.warning(self, "Cuidado", "Selecciona o abre una imagen primero.")
             return
 
         visor = ventana_activa.widget()
-
-        # 2. Convertimos la imagen actual a grises SIEMPRE.
-        # La morfología no se lleva bien con el RGB.
         imagen_base = getattr(visor, 'imagen_actual', visor.imagen_original)
+
         if len(imagen_base.shape) == 3:
             matriz_base = cv2.cvtColor(imagen_base, cv2.COLOR_BGR2GRAY)
         else:
             matriz_base = imagen_base.copy()
 
-        # 3. Leer los controles de tu Interfaz
         operacion = self.combo_operacion_p4.currentText()
         forma_texto = self.combo_forma_p4.currentText()
         tamano = self.spin_kernel_p4.value()
 
-        # 4. Construir el Elemento Estructurante (EE) de OpenCV
         if forma_texto == "Rectángulo":
             forma = cv2.MORPH_RECT
         elif forma_texto == "Elipse":
             forma = cv2.MORPH_ELLIPSE
-        else:  # Cruz
+        else:
             forma = cv2.MORPH_CROSS
 
         kernel = cv2.getStructuringElement(forma, (tamano, tamano))
 
         try:
-            # 5. EL SWITCH DE OPERACIONES MATEMÁTICAS
             if operacion == "Erosión":
                 resultado = cv2.erode(matriz_base, kernel, iterations=1)
             elif operacion == "Dilatación":
@@ -637,18 +687,14 @@ class VentanaPrincipal(QMainWindow):
                 resultado = cv2.morphologyEx(matriz_base, cv2.MORPH_TOPHAT, kernel)
             elif operacion == "Bot Hat":
                 resultado = cv2.morphologyEx(matriz_base, cv2.MORPH_BLACKHAT, kernel)
-
-            # --- OPERACIONES BINARIAS AVANZADAS ---
             elif operacion == "Frontera":
                 _, binaria = cv2.threshold(matriz_base, 127, 255, cv2.THRESH_BINARY)
                 dilatada = cv2.dilate(binaria, kernel, iterations=1)
                 resultado = cv2.subtract(dilatada, binaria)
-
             elif operacion == "Hit-or-Miss":
                 _, binaria = cv2.threshold(matriz_base, 127, 255, cv2.THRESH_BINARY)
                 kernel_hm = np.array([[0, 1, 0], [-1, 1, 1], [-1, -1, 0]], dtype="int")
                 resultado = cv2.morphologyEx(binaria, cv2.MORPH_HITMISS, kernel_hm)
-
             elif operacion == "Esqueleto (Adelgazamiento)":
                 _, binaria = cv2.threshold(matriz_base, 127, 255, cv2.THRESH_BINARY)
                 skel = np.zeros(binaria.shape, np.uint8)
@@ -665,17 +711,85 @@ class VentanaPrincipal(QMainWindow):
             else:
                 resultado = matriz_base
 
-                # 6. EL PARCHE PARA PYQT5 (Evita el crasheo de 3 dimensiones)
             if len(resultado.shape) == 2:
                 resultado_mostrar = cv2.cvtColor(resultado, cv2.COLOR_GRAY2RGB)
             else:
                 resultado_mostrar = resultado
 
-            # 7. Actualizar el Visor
             visor.dibujar_imagen(resultado_mostrar)
-            # Guardamos la imagen matemática real (en 2D) para que los filtros se puedan encadenar
             visor.imagen_actual = resultado
             ventana_activa.setWindowTitle(f"Morfología: {operacion}")
 
         except Exception as e:
             QMessageBox.critical(self, "Error de OpenCV", f"Ocurrió un error:\n\n{str(e)}")
+
+    # ==============================================================
+    # MÉTODOS AÑADIDOS PARA LA PRÁCTICA 5 (FFT y DCT)
+    # ==============================================================
+    def procesar_fft(self):
+        ventana_activa = self.mdi_area.activeSubWindow()
+        if not ventana_activa:
+            QMessageBox.warning(self, "Cuidado", "Selecciona o abre una imagen primero.")
+            return
+
+        visor = ventana_activa.widget()
+        # Tomamos la imagen actual del visor para que los filtros se puedan encadenar
+        matriz_base = getattr(visor, 'imagen_actual', visor.imagen_original)
+
+        # Leer los valores de los controles de la Pestaña 5
+        tipo_filtro = self.combo_filtro_fft.currentText()
+        modo = self.combo_pasa_fft.currentText()
+        cutoff = self.spin_cutoff.value()
+        orden = self.spin_orden.value()
+
+        try:
+            # Llamamos a nuestra función matemática en core/frecuencia.py
+            resultado = aplicar_filtro_fft(matriz_base, tipo_filtro, modo, cutoff, orden)
+
+            # Preparar la imagen para mostrarla en la interfaz (pasarla a 3 canales)
+            if len(resultado.shape) == 2:
+                resultado_mostrar = cv2.cvtColor(resultado, cv2.COLOR_GRAY2RGB)
+            else:
+                resultado_mostrar = resultado
+
+            # Actualizar el visor
+            visor.dibujar_imagen(resultado_mostrar)
+            visor.imagen_actual = resultado
+            ventana_activa.setWindowTitle(f"FFT: {tipo_filtro} ({modo}) - Cutoff: {cutoff}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error FFT",
+                                 f"Ocurrió un error procesando la Transformada de Fourier:\n\n{str(e)}")
+
+    def procesar_dct(self):
+        ventana_activa = self.mdi_area.activeSubWindow()
+        if not ventana_activa:
+            QMessageBox.warning(self, "Cuidado", "Selecciona o abre una imagen primero.")
+            return
+
+        visor = ventana_activa.widget()
+        matriz_base = getattr(visor, 'imagen_actual', visor.imagen_original)
+
+        # Leer el valor del deslizador de calidad
+        q_factor = self.spin_qfactor.value()
+
+        try:
+            # Llamamos a la compresión DCT y obtenemos la imagen final y el PSNR
+            resultado, psnr = aplicar_compresion_dct(matriz_base, q_factor)
+
+            if len(resultado.shape) == 2:
+                resultado_mostrar = cv2.cvtColor(resultado, cv2.COLOR_GRAY2RGB)
+            else:
+                resultado_mostrar = resultado
+
+            visor.dibujar_imagen(resultado_mostrar)
+            visor.imagen_actual = resultado
+            ventana_activa.setWindowTitle(f"Compresión DCT (q={q_factor}) - PSNR: {psnr:.2f} dB")
+
+            # Mostramos un cuadro de diálogo con la métrica PSNR para que sea fácil anotarla en reportes
+            QMessageBox.information(self, "Compresión DCT Exitosa",
+                                    f"La imagen ha sido comprimida y reconstruida.\n\n"
+                                    f"Factor de Cuantización (Q): {q_factor}\n"
+                                    f"Calidad PSNR: {psnr:.2f} dB")
+        except Exception as e:
+            QMessageBox.critical(self, "Error DCT", f"Ocurrió un error en la compresión:\n\n{str(e)}")
