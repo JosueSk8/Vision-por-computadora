@@ -1,8 +1,9 @@
 import cv2
+import numpy as np  # <-- AÑADIDO: Necesario para los ruidos
 from PyQt5.QtWidgets import (QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout,
                              QGridLayout, QWidget, QFileDialog, QMessageBox,
                              QFrame, QMdiArea, QMdiSubWindow, QTabWidget, QSlider, QLabel,
-                             QToolBox)  # <-- NUEVA IMPORTACIÓN
+                             QToolBox, QComboBox, QSpinBox)  # <-- AÑADIDO: QComboBox y QSpinBox
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import Qt
 
@@ -18,16 +19,19 @@ from core.ruidos import agregar_ruido_sal_pimienta, agregar_ruido_gaussiano
 from core.operaciones import (suavizar_ruido, operacion_not, operacion_and,
                               operacion_or, operacion_xor, contar_objetos,
                               operacion_suma, operacion_resta, operacion_multiplicacion,
-                              operacion_mayor, operacion_menor, operacion_igual)
+                              operacion_mayor, operacion_menor, operacion_igual,
+                              obtener_codigo_cadena)
 
 from ui.visor_imagen import VisorImagen
 from ui.dialogo_personalizado import DialogoMapaPersonalizado
+
+from core.morfologia import aplicar_morfologia
 
 
 class VentanaPrincipal(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Procesador de Imágenes - Prácticas 1, 2 y 3")
+        self.setWindowTitle("Procesador de Imágenes - Prácticas 1, 2, 3 y 4")
         self.setGeometry(50, 50, 1200, 850)
         self.setStyleSheet("background-color: #262626; color: white;")
 
@@ -61,7 +65,7 @@ class VentanaPrincipal(QMainWindow):
             QTabBar::tab:selected { background: #2a5a8a; font-weight: bold; }
         """)
 
-        # --- PESTAÑA 1: Básicos ---
+        # PESTAÑA 1: Básicos
         tab_basicos = QWidget()
         layout_basicos = QVBoxLayout(tab_basicos)
         grid_basicos = QGridLayout()
@@ -99,7 +103,7 @@ class VentanaPrincipal(QMainWindow):
         layout_basicos.addStretch()
         self.tabs.addTab(tab_basicos, "Modelos")
 
-        # --- PESTAÑA 2: Pseudocolor e IA ---
+        # PESTAÑA 2: Pseudocolor e IA
         tab_color = QWidget()
         layout_color = QVBoxLayout(tab_color)
         grid_color = QGridLayout()
@@ -130,18 +134,16 @@ class VentanaPrincipal(QMainWindow):
 
         self.tabs.addTab(tab_color, "Filtros e IA")
 
-        # --- PESTAÑA 3: MINIPROYECTO (ACORDEÓN / QTOOLBOX) ---
+        # PESTAÑA 3: MINIPROYECTO
         tab_p3 = QWidget()
         layout_p3 = QVBoxLayout(tab_p3)
 
-        # Creamos el Acordeón
         self.acordeon_p3 = QToolBox()
         self.acordeon_p3.setStyleSheet("""
             QToolBox::tab { background-color: #4a4a4a; color: white; font-weight: bold; border-radius: 4px; padding: 5px; }
             QToolBox::tab:selected { background-color: #2a5a8a; font-style: italic; }
         """)
 
-        # CAJA 1: Ruido
         widget_ruido = QWidget()
         grid_ruido = QGridLayout(widget_ruido)
         self.crear_boton("Polvo: Sal/Pimienta", grid_ruido, 0, 0, lambda: self.aplicar_filtro("Ruido SP"))
@@ -149,7 +151,6 @@ class VentanaPrincipal(QMainWindow):
         self.crear_boton("Suavizador (Gauss)", grid_ruido, 1, 0, lambda: self.aplicar_filtro("Filtro Suavizador"))
         self.acordeon_p3.addItem(widget_ruido, "▶ 1. Ruido y Filtros (3-a)")
 
-        # CAJA 2: Aritméticas
         widget_arit = QWidget()
         grid_arit = QGridLayout(widget_arit)
         self.crear_boton("Suma (+ Brillo)", grid_arit, 0, 0, lambda: self.aplicar_filtro("Op Suma"))
@@ -157,7 +158,6 @@ class VentanaPrincipal(QMainWindow):
         self.crear_boton("Multiplicar (Contraste)", grid_arit, 1, 0, lambda: self.aplicar_filtro("Op Mult"))
         self.acordeon_p3.addItem(widget_arit, "▶ 2. Operaciones Aritméticas (3-b)")
 
-        # CAJA 3: Relacionales
         widget_relac = QWidget()
         grid_relac = QGridLayout(widget_relac)
         self.crear_boton("Mayor que (>)", grid_relac, 0, 0, lambda: self.aplicar_filtro("Op Mayor"))
@@ -165,26 +165,81 @@ class VentanaPrincipal(QMainWindow):
         self.crear_boton("Igual a (==)", grid_relac, 1, 0, lambda: self.aplicar_filtro("Op Igual"))
         self.acordeon_p3.addItem(widget_relac, "▶ 3. Op. Relacionales (Usan Slider) (3-b)")
 
-        # CAJA 4: Lógicas
         widget_logic = QWidget()
         grid_logic = QGridLayout(widget_logic)
         self.crear_boton("Op. AND", grid_logic, 0, 0, lambda: self.aplicar_filtro("Operación AND"))
         self.crear_boton("Op. OR", grid_logic, 0, 1, lambda: self.aplicar_filtro("Operación OR"))
         self.crear_boton("Op. XOR", grid_logic, 1, 0, lambda: self.aplicar_filtro("Operación XOR"))
         self.crear_boton("Invertir (NOT)", grid_logic, 1, 1, lambda: self.aplicar_filtro("Operación NOT"))
-        self.acordeon_p3.addItem(widget_logic, "▶ 4. Compuertas Lógicas (Piden 2da foto)")
+        self.acordeon_p3.addItem(widget_logic, "▶ 4. Compuertas Lógicas")
 
-        # CAJA 5: Conteo
         widget_conteo = QWidget()
         grid_conteo = QGridLayout(widget_conteo)
         self.crear_boton("Contar (Vecindad-4)", grid_conteo, 0, 0, lambda: self.aplicar_filtro("Contar V-4"))
         self.crear_boton("Contar (Vecindad-8)", grid_conteo, 0, 1, lambda: self.aplicar_filtro("Contar V-8"))
-        self.acordeon_p3.addItem(widget_conteo, "▶ 5. Conteo de Objetos (3-c)")
+        self.crear_boton("Extraer Código Cadena", grid_conteo, 1, 0, lambda: self.aplicar_filtro("Código Cadena"))
+        self.acordeon_p3.addItem(widget_conteo, "▶ 5. Conteo y Código de Cadena (3-c)")
 
-        # Agregamos el acordeón a la pestaña
         layout_p3.addWidget(self.acordeon_p3)
-
         self.tabs.addTab(tab_p3, "Práctica 3")
+
+        # --- PESTAÑA 4: MORFOLOGÍA MATEMÁTICA ---
+        tab_p4 = QWidget()
+        layout_p4 = QVBoxLayout(tab_p4)
+
+        # 1. Controles de Ruido
+        layout_p4.addWidget(QLabel("1. Inyectar Ruido Manualmente:"))
+        self.combo_ruido_p4 = QComboBox()
+        self.combo_ruido_p4.setStyleSheet("background-color: #444; padding: 5px;")
+        self.combo_ruido_p4.addItems(["Sal (Blanco)", "Pimienta (Negro)", "Bipolar (Sal y Pimienta)", "Gaussiano"])
+        layout_p4.addWidget(self.combo_ruido_p4)
+
+        self.btn_ruido_p4 = QPushButton("Aplicar Ruido")
+        self.btn_ruido_p4.setStyleSheet(self.estilo_btn)
+        self.btn_ruido_p4.clicked.connect(self.procesar_ruido_p4)
+        layout_p4.addWidget(self.btn_ruido_p4)
+
+        # Separador
+        linea = QFrame()
+        linea.setFrameShape(QFrame.HLine)
+        linea.setFrameShadow(QFrame.Sunken)
+        layout_p4.addWidget(linea)
+
+        # 2. Controles de Morfología
+        layout_p4.addWidget(QLabel("2. Operación Morfológica:"))
+        self.combo_operacion_p4 = QComboBox()
+        self.combo_operacion_p4.setStyleSheet("background-color: #444; padding: 5px;")
+        self.combo_operacion_p4.addItems([
+            "Erosión", "Dilatación", "Apertura", "Cierre",
+            "Gradiente Simétrico", "Gradiente por Erosión (Interno)",
+            "Gradiente por Dilatación (Externo)", "Top Hat",
+            "Black Hat (Bot Hat)", "Hit-or-Miss", "Esqueleto (Adelgazamiento)"
+        ])
+        layout_p4.addWidget(self.combo_operacion_p4)
+
+        layout_p4.addWidget(QLabel("Forma del Elemento Estructurante:"))
+        self.combo_forma_p4 = QComboBox()
+        self.combo_forma_p4.setStyleSheet("background-color: #444; padding: 5px;")
+        self.combo_forma_p4.addItems(["Rectángulo", "Cruz", "Elipse"])
+        layout_p4.addWidget(self.combo_forma_p4)
+
+        layout_p4.addWidget(QLabel("Tamaño del Kernel (Impar):"))
+        self.spin_kernel_p4 = QSpinBox()
+        self.spin_kernel_p4.setStyleSheet("background-color: #444; padding: 5px;")
+        self.spin_kernel_p4.setRange(3, 31)
+        self.spin_kernel_p4.setSingleStep(2)
+        self.spin_kernel_p4.setValue(3)
+        layout_p4.addWidget(self.spin_kernel_p4)
+
+        self.btn_morfologia_p4 = QPushButton("Aplicar Morfología")
+        self.btn_morfologia_p4.setStyleSheet(
+            "background-color: #2a5a8a; font-weight: bold; padding: 12px; border-radius: 5px; margin-top: 10px;")
+        self.btn_morfologia_p4.clicked.connect(self.procesar_morfologia_p4)
+        layout_p4.addWidget(self.btn_morfologia_p4)
+
+        layout_p4.addStretch()
+        self.tabs.addTab(tab_p4, "Práctica 4")
+        # ----------------------------------------
 
         layout_marco.addWidget(self.tabs)
         layout_marco.addStretch()
@@ -322,7 +377,8 @@ class VentanaPrincipal(QMainWindow):
         ventana_activa = self.mdi_area.activeSubWindow()
         if ventana_activa:
             visor = ventana_activa.widget()
-            if visor.filtro_actual in ["Binarizar", "Op Mayor", "Op Menor", "Op Igual", "Contar V-4", "Contar V-8"]:
+            if visor.filtro_actual in ["Binarizar", "Op Mayor", "Op Menor", "Op Igual", "Contar V-4", "Contar V-8",
+                                       "Código Cadena"]:
                 self.procesar_visor(visor, ventana_activa)
 
     def abrir_dialogo_personalizado(self):
@@ -459,6 +515,11 @@ class VentanaPrincipal(QMainWindow):
             resultado, conteo = contar_objetos(matriz_base, vecindad=8, valor_umbral=self.slider_umbral.value())
             QMessageBox.information(self, "Resultado", f"¡Se detectaron {conteo} objetos usando Vecindad-8!")
 
+        elif tipo_filtro == "Código Cadena":
+            resultado, codigo = obtener_codigo_cadena(matriz_base, valor_umbral=self.slider_umbral.value())
+            QMessageBox.information(self, "Código de Cadena (Chain Code)",
+                                    f"Secuencia extraída de la forma:\n\n{codigo}")
+
         visor.dibujar_imagen(resultado)
         ventana_activa.setWindowTitle(f"Filtro: {tipo_filtro}")
 
@@ -472,6 +533,149 @@ class VentanaPrincipal(QMainWindow):
         ruta_guardado, _ = QFileDialog.getSaveFileName(self, "Guardar Imagen", "", "PNG (*.png);;JPEG (*.jpg *.jpeg)")
 
         if ruta_guardado:
-            imagen_bgr = cv2.cvtColor(visor.imagen_actual, cv2.COLOR_RGB2BGR)
+            # Asegúrate de que visor.imagen_actual exista en tu clase VisorImagen
+            imagen_bgr = cv2.cvtColor(getattr(visor, 'imagen_actual', visor.imagen_original), cv2.COLOR_RGB2BGR)
             cv2.imwrite(ruta_guardado, imagen_bgr)
             QMessageBox.information(self, "Éxito", "Imagen guardada correctamente.")
+
+    # ==============================================================
+    # MÉTODOS NUEVOS PARA LA PRÁCTICA 4
+    # ==============================================================
+
+    def procesar_ruido_p4(self):
+        ventana_activa = self.mdi_area.activeSubWindow()
+        if not ventana_activa:
+            QMessageBox.warning(self, "Cuidado", "Selecciona o abre una imagen primero.")
+            return
+
+        visor = ventana_activa.widget()
+        # Tomamos la imagen que actualmente se ve en la pantalla del visor
+        matriz_base = getattr(visor, 'imagen_actual', visor.imagen_original)
+        tipo_ruido = self.combo_ruido_p4.currentText()
+
+        try:
+            img_ruido = matriz_base.copy()
+
+            if tipo_ruido == "Gaussiano":
+                ruido = np.random.normal(0, 25, img_ruido.shape).astype(np.uint8)
+                img_ruido = cv2.add(img_ruido, ruido)
+            else:
+                ruido_mat = np.zeros(img_ruido.shape[:2], np.uint8)
+                cv2.randu(ruido_mat, 0, 255)
+
+                if tipo_ruido == "Sal (Blanco)":
+                    img_ruido[ruido_mat < 15] = 255
+                elif tipo_ruido == "Pimienta (Negro)":
+                    img_ruido[ruido_mat > 240] = 0
+                elif tipo_ruido == "Bipolar (Sal y Pimienta)":
+                    img_ruido[ruido_mat < 10] = 255
+                    img_ruido[ruido_mat > 245] = 0
+
+            # --- 1. PARCHE ANTI-CRASHEO PARA PYQT5 ---
+            # Si la imagen viene de una morfología (2D), la engañamos pasándola a 3 canales
+            if len(img_ruido.shape) == 2:
+                img_mostrar = cv2.cvtColor(img_ruido, cv2.COLOR_GRAY2RGB)
+            else:
+                img_mostrar = img_ruido
+
+            visor.dibujar_imagen(img_mostrar)
+
+            # --- 2. PARCHE PARA ENCADENAMIENTO ---
+            # Guardamos la imagen en memoria para que la morfología la pueda leer con ruido
+            visor.imagen_actual = img_ruido
+
+            ventana_activa.setWindowTitle(f"Ruido: {tipo_ruido}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error inyectando ruido", f"Ocurrió un error:\n\n{str(e)}")
+
+    def procesar_morfologia_p4(self):
+        # 1. Verificamos que haya una ventana abierta
+        ventana_activa = self.mdi_area.activeSubWindow()
+        if not ventana_activa:
+            QMessageBox.warning(self, "Cuidado", "Selecciona o abre una imagen primero.")
+            return
+
+        visor = ventana_activa.widget()
+
+        # 2. Convertimos la imagen actual a grises SIEMPRE.
+        # La morfología no se lleva bien con el RGB.
+        imagen_base = getattr(visor, 'imagen_actual', visor.imagen_original)
+        if len(imagen_base.shape) == 3:
+            matriz_base = cv2.cvtColor(imagen_base, cv2.COLOR_BGR2GRAY)
+        else:
+            matriz_base = imagen_base.copy()
+
+        # 3. Leer los controles de tu Interfaz
+        operacion = self.combo_operacion_p4.currentText()
+        forma_texto = self.combo_forma_p4.currentText()
+        tamano = self.spin_kernel_p4.value()
+
+        # 4. Construir el Elemento Estructurante (EE) de OpenCV
+        if forma_texto == "Rectángulo":
+            forma = cv2.MORPH_RECT
+        elif forma_texto == "Elipse":
+            forma = cv2.MORPH_ELLIPSE
+        else:  # Cruz
+            forma = cv2.MORPH_CROSS
+
+        kernel = cv2.getStructuringElement(forma, (tamano, tamano))
+
+        try:
+            # 5. EL SWITCH DE OPERACIONES MATEMÁTICAS
+            if operacion == "Erosión":
+                resultado = cv2.erode(matriz_base, kernel, iterations=1)
+            elif operacion == "Dilatación":
+                resultado = cv2.dilate(matriz_base, kernel, iterations=1)
+            elif operacion == "Apertura":
+                resultado = cv2.morphologyEx(matriz_base, cv2.MORPH_OPEN, kernel)
+            elif operacion == "Cierre":
+                resultado = cv2.morphologyEx(matriz_base, cv2.MORPH_CLOSE, kernel)
+            elif operacion == "Gradiente Simétrico":
+                resultado = cv2.morphologyEx(matriz_base, cv2.MORPH_GRADIENT, kernel)
+            elif operacion == "Top Hat":
+                resultado = cv2.morphologyEx(matriz_base, cv2.MORPH_TOPHAT, kernel)
+            elif operacion == "Bot Hat":
+                resultado = cv2.morphologyEx(matriz_base, cv2.MORPH_BLACKHAT, kernel)
+
+            # --- OPERACIONES BINARIAS AVANZADAS ---
+            elif operacion == "Frontera":
+                _, binaria = cv2.threshold(matriz_base, 127, 255, cv2.THRESH_BINARY)
+                dilatada = cv2.dilate(binaria, kernel, iterations=1)
+                resultado = cv2.subtract(dilatada, binaria)
+
+            elif operacion == "Hit-or-Miss":
+                _, binaria = cv2.threshold(matriz_base, 127, 255, cv2.THRESH_BINARY)
+                kernel_hm = np.array([[0, 1, 0], [-1, 1, 1], [-1, -1, 0]], dtype="int")
+                resultado = cv2.morphologyEx(binaria, cv2.MORPH_HITMISS, kernel_hm)
+
+            elif operacion == "Esqueleto (Adelgazamiento)":
+                _, binaria = cv2.threshold(matriz_base, 127, 255, cv2.THRESH_BINARY)
+                skel = np.zeros(binaria.shape, np.uint8)
+                img_temp = binaria.copy()
+                while True:
+                    eroded = cv2.erode(img_temp, kernel)
+                    temp = cv2.dilate(eroded, kernel)
+                    temp = cv2.subtract(img_temp, temp)
+                    skel = cv2.bitwise_or(skel, temp)
+                    img_temp = eroded.copy()
+                    if cv2.countNonZero(img_temp) == 0:
+                        break
+                resultado = skel
+            else:
+                resultado = matriz_base
+
+                # 6. EL PARCHE PARA PYQT5 (Evita el crasheo de 3 dimensiones)
+            if len(resultado.shape) == 2:
+                resultado_mostrar = cv2.cvtColor(resultado, cv2.COLOR_GRAY2RGB)
+            else:
+                resultado_mostrar = resultado
+
+            # 7. Actualizar el Visor
+            visor.dibujar_imagen(resultado_mostrar)
+            # Guardamos la imagen matemática real (en 2D) para que los filtros se puedan encadenar
+            visor.imagen_actual = resultado
+            ventana_activa.setWindowTitle(f"Morfología: {operacion}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error de OpenCV", f"Ocurrió un error:\n\n{str(e)}")
