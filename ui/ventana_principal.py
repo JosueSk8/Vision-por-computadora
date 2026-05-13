@@ -733,33 +733,44 @@ class VentanaPrincipal(QMainWindow):
             return
 
         visor = ventana_activa.widget()
-        # Tomamos la imagen actual del visor para que los filtros se puedan encadenar
         matriz_base = getattr(visor, 'imagen_actual', visor.imagen_original)
 
-        # Leer los valores de los controles de la Pestaña 5
         tipo_filtro = self.combo_filtro_fft.currentText()
         modo = self.combo_pasa_fft.currentText()
         cutoff = self.spin_cutoff.value()
         orden = self.spin_orden.value()
 
         try:
-            # Llamamos a nuestra función matemática en core/frecuencia.py
-            resultado = aplicar_filtro_fft(matriz_base, tipo_filtro, modo, cutoff, orden)
+            resultado, mag, fase = aplicar_filtro_fft(matriz_base, tipo_filtro, modo, cutoff, orden)
 
-            # Preparar la imagen para mostrarla en la interfaz (pasarla a 3 canales)
-            if len(resultado.shape) == 2:
-                resultado_mostrar = cv2.cvtColor(resultado, cv2.COLOR_GRAY2RGB)
+            # --- SOLUCIÓN BLINDADA PARA EL 5% FALTANTE ---
+            # Si la imagen es muy grande (como las rocas), la achicamos un poco solo para visualizar
+            # el espectro sin que se sature la pantalla de tu computadora.
+            h_mag, w_mag = mag.shape
+            if h_mag > 600 or w_mag > 600:
+                escala = 600 / max(h_mag, w_mag)
+                mag_show = cv2.resize(mag, (int(w_mag * escala), int(h_mag * escala)))
+                fase_show = cv2.resize(fase, (int(w_mag * escala), int(h_mag * escala)))
             else:
-                resultado_mostrar = resultado
+                mag_show = mag
+                fase_show = fase
 
-            # Actualizar el visor
+            # Usamos ventanas nativas de OpenCV en lugar de PyQt5. ¡Estas no crashean!
+            cv2.imshow(f"Espectro Magnitud - {tipo_filtro}", mag_show)
+            cv2.imshow(f"Espectro Fase - {tipo_filtro}", fase_show)
+
+            # Actualizamos la imagen principal en PyQt5 como siempre
+            if len(resultado.shape) == 2:
+                resultado_mostrar = cv2.cvtColor(resultado, cv2.COLOR_GRAY2RGB).copy()
+            else:
+                resultado_mostrar = resultado.copy()
+
             visor.dibujar_imagen(resultado_mostrar)
             visor.imagen_actual = resultado
             ventana_activa.setWindowTitle(f"FFT: {tipo_filtro} ({modo}) - Cutoff: {cutoff}")
 
         except Exception as e:
-            QMessageBox.critical(self, "Error FFT",
-                                 f"Ocurrió un error procesando la Transformada de Fourier:\n\n{str(e)}")
+            QMessageBox.critical(self, "Error FFT", f"Ocurrió un error procesando la FFT:\n\n{str(e)}")
 
     def procesar_dct(self):
         ventana_activa = self.mdi_area.activeSubWindow()
